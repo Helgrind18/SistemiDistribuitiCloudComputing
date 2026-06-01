@@ -1,0 +1,4 @@
+ticker,quantita,prezzo_medio_acquisto,data_acquisto,settore,mercato
+MSFT,4,390.50,2026-02-10,Technology,NASDAQ
+AAPL,6,205.30,2026-03-05,Technology,NASDAQ
+KO,10,68.20,2026-04-12,Consumer Defensive,NYSE

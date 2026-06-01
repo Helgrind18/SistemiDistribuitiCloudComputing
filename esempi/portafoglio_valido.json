@@ -1,0 +1,18 @@
+[
+  {
+    "ticker": "MSFT",
+    "quantita": 4,
+    "prezzo_medio_acquisto": 390.50,
+    "data_acquisto": "2026-02-10",
+    "settore": "Technology",
+    "mercato": "NASDAQ"
+  },
+  {
+    "ticker": "AAPL",
+    "quantita": 6,
+    "prezzo_medio_acquisto": 205.30,
+    "data_acquisto": "2026-03-05",
+    "settore": "Technology",
+    "mercato": "NASDAQ"
+  }
+]
