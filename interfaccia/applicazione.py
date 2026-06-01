@@ -62,6 +62,15 @@ def mostra_errore_api(
     )
 
 
+def salva_messaggio_successo(
+    messaggio: str,
+) -> None:
+    """Salva un messaggio e aggiorna la pagina."""
+
+    st.session_state["messaggio_successo"] = messaggio
+    st.rerun()
+
+
 def verifica_backend() -> bool:
     """Controlla che FastAPI sia raggiungibile."""
 
@@ -94,7 +103,7 @@ def ottieni_portafogli() -> list[dict]:
 def ottieni_titoli(
     portafoglio_id: int,
 ) -> list[dict]:
-    """Recupera i titoli di un portafoglio."""
+    """Recupera i titoli contenuti in un portafoglio."""
 
     risposta = invia_richiesta(
         metodo="GET",
@@ -135,12 +144,32 @@ def crea_portafoglio(
 
     portafoglio = risposta.json()
 
-    st.session_state["messaggio_successo"] = (
+    salva_messaggio_successo(
         "Portafoglio creato correttamente: "
         f"{portafoglio['nome']}."
     )
 
-    st.rerun()
+
+def elimina_portafoglio(
+    portafoglio_id: int,
+) -> None:
+    """Richiede al backend l'eliminazione di un portafoglio."""
+
+    risposta = invia_richiesta(
+        metodo="DELETE",
+        percorso=f"/portafogli/{portafoglio_id}",
+    )
+
+    if risposta is None:
+        return
+
+    if risposta.status_code != 204:
+        mostra_errore_api(risposta)
+        return
+
+    salva_messaggio_successo(
+        "Portafoglio eliminato correttamente."
+    )
 
 
 def inserisci_titolo_manualmente(
@@ -176,11 +205,77 @@ def inserisci_titolo_manualmente(
 
     titolo = risposta.json()
 
-    st.session_state["messaggio_successo"] = (
+    salva_messaggio_successo(
         f"Titolo {titolo['ticker']} inserito correttamente."
     )
 
-    st.rerun()
+
+def modifica_titolo(
+    portafoglio_id: int,
+    titolo_id: int,
+    ticker: str,
+    quantita: float,
+    prezzo_medio_acquisto: float,
+    data_acquisto: date,
+    settore: str,
+    mercato: str,
+) -> None:
+    """Richiede al backend la modifica di un titolo."""
+
+    risposta = invia_richiesta(
+        metodo="PUT",
+        percorso=(
+            f"/portafogli/{portafoglio_id}"
+            f"/titoli/{titolo_id}"
+        ),
+        json={
+            "ticker": ticker,
+            "quantita": quantita,
+            "prezzo_medio_acquisto": prezzo_medio_acquisto,
+            "data_acquisto": data_acquisto.isoformat(),
+            "settore": settore,
+            "mercato": mercato,
+        },
+    )
+
+    if risposta is None:
+        return
+
+    if risposta.status_code != 200:
+        mostra_errore_api(risposta)
+        return
+
+    titolo = risposta.json()
+
+    salva_messaggio_successo(
+        f"Titolo {titolo['ticker']} modificato correttamente."
+    )
+
+
+def elimina_titolo(
+    portafoglio_id: int,
+    titolo_id: int,
+) -> None:
+    """Richiede al backend l'eliminazione di un titolo."""
+
+    risposta = invia_richiesta(
+        metodo="DELETE",
+        percorso=(
+            f"/portafogli/{portafoglio_id}"
+            f"/titoli/{titolo_id}"
+        ),
+    )
+
+    if risposta is None:
+        return
+
+    if risposta.status_code != 204:
+        mostra_errore_api(risposta)
+        return
+
+    salva_messaggio_successo(
+        "Titolo eliminato correttamente."
+    )
 
 
 def importa_file(
@@ -196,7 +291,8 @@ def importa_file(
             "file": (
                 file_caricato.name,
                 file_caricato.getvalue(),
-                file_caricato.type or "application/octet-stream",
+                file_caricato.type
+                or "application/octet-stream",
             )
         },
     )
@@ -211,16 +307,20 @@ def importa_file(
     risultato = risposta.json()
 
     if risultato["stato"] == "completata":
-        st.session_state["messaggio_successo"] = (
+        salva_messaggio_successo(
             "Importazione completata: "
             f"{risultato['righe_importate']} titoli inseriti."
         )
 
-        st.rerun()
+    st.error(
+        "Importazione fallita. "
+        "Nessun titolo è stato inserito."
+    )
 
-    st.error("Importazione fallita. Nessun titolo è stato inserito.")
-
-    errori = risultato.get("errori", [])
+    errori = risultato.get(
+        "errori",
+        [],
+    )
 
     if errori:
         st.dataframe(
@@ -230,6 +330,38 @@ def importa_file(
         )
 
 
+def formatta_portafoglio(
+    portafoglio_id: int,
+    portafogli: list[dict],
+) -> str:
+    """Genera l'etichetta mostrata nel menu dei portafogli."""
+
+    for portafoglio in portafogli:
+        if portafoglio["id"] == portafoglio_id:
+            return (
+                f"{portafoglio['nome']} "
+                f"(id={portafoglio['id']})"
+            )
+
+    return str(portafoglio_id)
+
+
+def formatta_titolo(
+    titolo_id: int,
+    titoli: list[dict],
+) -> str:
+    """Genera l'etichetta mostrata nel menu dei titoli."""
+
+    for titolo in titoli:
+        if titolo["id"] == titolo_id:
+            return (
+                f"{titolo['ticker']} "
+                f"(id={titolo['id']})"
+            )
+
+    return str(titolo_id)
+
+
 st.set_page_config(
     page_title="Gestione portafogli finanziari",
     page_icon="📈",
@@ -237,7 +369,9 @@ st.set_page_config(
 )
 
 st.title("Gestione portafogli finanziari")
-st.caption("Interfaccia Streamlit collegata al backend FastAPI.")
+st.caption(
+    "Interfaccia Streamlit collegata al backend FastAPI."
+)
 
 messaggio_successo = st.session_state.pop(
     "messaggio_successo",
@@ -259,6 +393,7 @@ scheda_portafogli, scheda_gestione = st.tabs(
         "Gestione titoli",
     ]
 )
+
 
 with scheda_portafogli:
     st.header("Crea un nuovo portafoglio")
@@ -303,6 +438,49 @@ with scheda_portafogli:
             hide_index=True,
             use_container_width=True,
         )
+
+        with st.expander(
+            "Elimina un portafoglio",
+            expanded=False,
+        ):
+            st.warning(
+                "L'eliminazione rimuove anche i titoli "
+                "e le importazioni associati."
+            )
+
+            portafoglio_da_eliminare_id = st.selectbox(
+                "Portafoglio da eliminare",
+                options=[
+                    portafoglio["id"]
+                    for portafoglio in portafogli
+                ],
+                format_func=lambda identificativo: (
+                    formatta_portafoglio(
+                        identificativo,
+                        portafogli,
+                    )
+                ),
+                key="portafoglio_da_eliminare",
+            )
+
+            conferma_eliminazione_portafoglio = st.checkbox(
+                "Confermo di voler eliminare il portafoglio.",
+                key=(
+                    "conferma_eliminazione_portafoglio_"
+                    f"{portafoglio_da_eliminare_id}"
+                ),
+            )
+
+            if st.button(
+                "Elimina portafoglio",
+                disabled=(
+                    not conferma_eliminazione_portafoglio
+                ),
+                type="primary",
+            ):
+                elimina_portafoglio(
+                    portafoglio_id=portafoglio_da_eliminare_id,
+                )
     else:
         st.info(
             "Non sono ancora presenti portafogli."
@@ -325,15 +503,13 @@ with scheda_gestione:
                 portafoglio["id"]
                 for portafoglio in portafogli
             ],
-            format_func=lambda identificativo: next(
-                (
-                    f"{portafoglio['nome']} "
-                    f"(id={portafoglio['id']})"
-                    for portafoglio in portafogli
-                    if portafoglio["id"] == identificativo
-                ),
-                str(identificativo),
+            format_func=lambda identificativo: (
+                formatta_portafoglio(
+                    identificativo,
+                    portafogli,
+                )
             ),
+            key="portafoglio_selezionato",
         )
 
         st.subheader("Titoli presenti")
@@ -350,7 +526,8 @@ with scheda_gestione:
             )
         else:
             st.info(
-                "Il portafoglio selezionato non contiene ancora titoli."
+                "Il portafoglio selezionato "
+                "non contiene ancora titoli."
             )
 
         colonna_inserimento, colonna_importazione = st.columns(2)
@@ -358,7 +535,9 @@ with scheda_gestione:
         with colonna_inserimento:
             st.subheader("Inserimento manuale")
 
-            with st.form("inserimento_manuale"):
+            with st.form(
+                f"inserimento_manuale_{portafoglio_id}"
+            ):
                 ticker = st.text_input(
                     "Ticker",
                     max_chars=15,
@@ -430,6 +609,7 @@ with scheda_gestione:
                     "csv",
                     "json",
                 ],
+                key=f"file_importazione_{portafoglio_id}",
             )
 
             if file_caricato is not None:
@@ -444,4 +624,144 @@ with scheda_gestione:
                     importa_file(
                         portafoglio_id=portafoglio_id,
                         file_caricato=file_caricato,
+                    )
+
+        if titoli:
+            st.divider()
+            st.subheader("Modifica o elimina un titolo")
+
+            titolo_id = st.selectbox(
+                "Seleziona un titolo",
+                options=[
+                    titolo["id"]
+                    for titolo in titoli
+                ],
+                format_func=lambda identificativo: (
+                    formatta_titolo(
+                        identificativo,
+                        titoli,
+                    )
+                ),
+                key="titolo_selezionato",
+            )
+
+            titolo_selezionato = next(
+                titolo
+                for titolo in titoli
+                if titolo["id"] == titolo_id
+            )
+
+            colonna_modifica, colonna_eliminazione = st.columns(
+                [
+                    2,
+                    1,
+                ]
+            )
+
+            with colonna_modifica:
+                with st.form(
+                    f"modifica_titolo_{titolo_id}"
+                ):
+                    ticker_modificato = st.text_input(
+                        "Ticker da modificare",
+                        value=titolo_selezionato["ticker"],
+                        max_chars=15,
+                        key=f"ticker_modificato_{titolo_id}",
+                    )
+
+                    quantita_modificata = st.number_input(
+                        "Quantità aggiornata",
+                        min_value=0.000001,
+                        value=float(
+                            titolo_selezionato["quantita"]
+                        ),
+                        step=1.0,
+                        format="%.6f",
+                        key=f"quantita_modificata_{titolo_id}",
+                    )
+
+                    prezzo_modificato = st.number_input(
+                        "Prezzo medio aggiornato",
+                        min_value=0.0,
+                        value=float(
+                            titolo_selezionato[
+                                "prezzo_medio_acquisto"
+                            ]
+                        ),
+                        step=0.01,
+                        format="%.2f",
+                        key=f"prezzo_modificato_{titolo_id}",
+                    )
+
+                    data_modificata = st.date_input(
+                        "Data di acquisto aggiornata",
+                        value=date.fromisoformat(
+                            titolo_selezionato[
+                                "data_acquisto"
+                            ]
+                        ),
+                        max_value=date.today(),
+                        key=f"data_modificata_{titolo_id}",
+                    )
+
+                    settore_modificato = st.text_input(
+                        "Settore aggiornato",
+                        value=titolo_selezionato["settore"],
+                        key=f"settore_modificato_{titolo_id}",
+                    )
+
+                    mercato_modificato = st.text_input(
+                        "Mercato aggiornato",
+                        value=titolo_selezionato["mercato"],
+                        key=f"mercato_modificato_{titolo_id}",
+                    )
+
+                    conferma_modifica = st.form_submit_button(
+                        "Salva modifiche"
+                    )
+
+                    if conferma_modifica:
+                        if not ticker_modificato.strip():
+                            st.warning("Inserire il ticker.")
+                        elif not settore_modificato.strip():
+                            st.warning("Inserire il settore.")
+                        elif not mercato_modificato.strip():
+                            st.warning("Inserire il mercato.")
+                        else:
+                            modifica_titolo(
+                                portafoglio_id=portafoglio_id,
+                                titolo_id=titolo_id,
+                                ticker=ticker_modificato.strip(),
+                                quantita=quantita_modificata,
+                                prezzo_medio_acquisto=(
+                                    prezzo_modificato
+                                ),
+                                data_acquisto=data_modificata,
+                                settore=settore_modificato.strip(),
+                                mercato=mercato_modificato.strip(),
+                            )
+
+            with colonna_eliminazione:
+                st.warning(
+                    "L'eliminazione del titolo è definitiva."
+                )
+
+                conferma_eliminazione_titolo = st.checkbox(
+                    "Confermo di voler eliminare il titolo.",
+                    key=(
+                        "conferma_eliminazione_titolo_"
+                        f"{titolo_id}"
+                    ),
+                )
+
+                if st.button(
+                    "Elimina titolo",
+                    disabled=(
+                        not conferma_eliminazione_titolo
+                    ),
+                    type="primary",
+                ):
+                    elimina_titolo(
+                        portafoglio_id=portafoglio_id,
+                        titolo_id=titolo_id,
                     )
