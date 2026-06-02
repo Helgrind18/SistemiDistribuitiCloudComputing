@@ -29,10 +29,10 @@ class ErroreFormatoFileNonSupportato(Exception):
 
 
 def importa_file_in_portafoglio(
-    sessione: Session,
-    portafoglio_id: int,
-    nome_file: str,
-    contenuto_file: bytes,
+        sessione: Session,
+        portafoglio_id: int,
+        nome_file: str,
+        contenuto_file: bytes,
 ) -> Importazione:
     """
     Registra un'importazione e salva i titoli soltanto se il file
@@ -110,9 +110,9 @@ def importa_file_in_portafoglio(
 
 
 def _trova_ticker_gia_presenti(
-    sessione: Session,
-    portafoglio_id: int,
-    titoli: list[TitoloPossedutoInIngresso],
+        sessione: Session,
+        portafoglio_id: int,
+        titoli: list[TitoloPossedutoInIngresso],
 ) -> list[ErroreLettura]:
     """Individua i ticker già salvati nello stesso portafoglio."""
 
@@ -148,9 +148,9 @@ def _trova_ticker_gia_presenti(
 
 
 def _salva_titoli(
-    sessione: Session,
-    portafoglio_id: int,
-    titoli: list[TitoloPossedutoInIngresso],
+        sessione: Session,
+        portafoglio_id: int,
+        titoli: list[TitoloPossedutoInIngresso],
 ) -> None:
     """Aggiunge alla sessione tutti i titoli validati."""
 
@@ -171,9 +171,9 @@ def _salva_titoli(
 
 
 def _salva_errori_importazione(
-    sessione: Session,
-    importazione_id: int,
-    errori: list[ErroreLettura],
+        sessione: Session,
+        importazione_id: int,
+        errori: list[ErroreLettura],
 ) -> None:
     """Registra nel database gli errori trovati nel file."""
 
@@ -192,8 +192,8 @@ def _salva_errori_importazione(
 
 
 def _calcola_righe_totali(
-    risultato: RisultatoLettura,
-    errori: list[ErroreLettura],
+        risultato: RisultatoLettura,
+        errori: list[ErroreLettura],
 ) -> int:
     """Calcola il numero complessivo di righe analizzate."""
 

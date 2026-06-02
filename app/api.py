@@ -1,5 +1,11 @@
 from typing import Annotated
-
+from app.servizio_quotazioni import (
+    ErroreConfigurazioneQuotazioni,
+    ErrorePortafoglioNonTrovato as ErrorePortafoglioQuotazioniNonTrovato,
+    ErroreServizioQuotazioni,
+    aggiorna_quotazioni_portafoglio,
+    calcola_riepilogo_portafoglio,
+)
 from fastapi import (
     Depends,
     FastAPI,
@@ -389,3 +395,54 @@ async def carica_file_portafoglio(
             for errore in errori
         ],
     }
+
+@applicazione.post(
+    "/portafogli/{portafoglio_id}/aggiorna-quotazioni",
+)
+def aggiorna_quotazioni(
+    portafoglio_id: int,
+    sessione: SessioneDatabase,
+) -> dict:
+    """Aggiorna le quotazioni dei titoli presenti in un portafoglio."""
+
+    try:
+        return aggiorna_quotazioni_portafoglio(
+            sessione=sessione,
+            portafoglio_id=portafoglio_id,
+        )
+    except ErrorePortafoglioQuotazioniNonTrovato as errore:
+        raise HTTPException(
+            status_code=404,
+            detail=str(errore),
+        ) from errore
+    except ErroreConfigurazioneQuotazioni as errore:
+        raise HTTPException(
+            status_code=500,
+            detail=str(errore),
+        ) from errore
+    except ErroreServizioQuotazioni as errore:
+        raise HTTPException(
+            status_code=502,
+            detail=str(errore),
+        ) from errore
+
+
+@applicazione.get(
+    "/portafogli/{portafoglio_id}/riepilogo",
+)
+def ottieni_riepilogo_portafoglio(
+    portafoglio_id: int,
+    sessione: SessioneDatabase,
+) -> dict:
+    """Restituisce il riepilogo finanziario di un portafoglio."""
+
+    try:
+        return calcola_riepilogo_portafoglio(
+            sessione=sessione,
+            portafoglio_id=portafoglio_id,
+        )
+    except ErrorePortafoglioQuotazioniNonTrovato as errore:
+        raise HTTPException(
+            status_code=404,
+            detail=str(errore),
+        ) from errore

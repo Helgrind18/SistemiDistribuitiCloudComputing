@@ -277,3 +277,25 @@ class ErroreImportazione(BaseModelli):
     importazione: Mapped[Importazione] = relationship(
         back_populates="errori",
     )
+
+class QuotazioneCorrente(BaseModelli):
+    """Ultimo prezzo recuperato per un ticker."""
+
+    __tablename__ = "quotazioni_correnti"
+
+    ticker: Mapped[str] = mapped_column(
+        String(15),
+        primary_key=True,
+    )
+
+    prezzo_corrente: Mapped[Decimal] = mapped_column(
+        Numeric(18, 6),
+        nullable=False,
+    )
+
+    recuperata_il: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
