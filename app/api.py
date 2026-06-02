@@ -1,11 +1,5 @@
 from typing import Annotated
-from app.servizio_quotazioni import (
-    ErroreConfigurazioneQuotazioni,
-    ErrorePortafoglioNonTrovato as ErrorePortafoglioQuotazioniNonTrovato,
-    ErroreServizioQuotazioni,
-    aggiorna_quotazioni_portafoglio,
-    calcola_riepilogo_portafoglio,
-)
+
 from fastapi import (
     Depends,
     FastAPI,
@@ -20,7 +14,6 @@ from sqlalchemy.orm import Session
 
 from app.dipendenze import ottieni_sessione
 from app.modelli import (
-    ErroreImportazione,
     Portafoglio,
     TitoloPosseduto,
 )
@@ -43,6 +36,13 @@ from app.servizio_portafogli import (
     elimina_titolo,
     modifica_titolo,
 )
+from app.servizio_quotazioni import (
+    ErroreConfigurazioneQuotazioni,
+    ErrorePortafoglioNonTrovato as ErrorePortafoglioQuotazioniNonTrovato,
+    ErroreServizioQuotazioni,
+    aggiorna_quotazioni_portafoglio,
+    calcola_riepilogo_portafoglio,
+)
 
 
 applicazione = FastAPI(
@@ -51,7 +51,7 @@ applicazione = FastAPI(
         "API per creare e gestire portafogli finanziari, "
         "inserire manualmente titoli e importare file CSV oppure JSON."
     ),
-    version="0.2.0",
+    version="0.3.0",
 )
 
 
@@ -81,7 +81,9 @@ def converti_titolo_in_dizionario(
     return {
         "id": titolo.id,
         "ticker": titolo.ticker,
-        "quantita": str(titolo.quantita),
+        "quantita": str(
+            titolo.quantita
+        ),
         "prezzo_medio_acquisto": str(
             titolo.prezzo_medio_acquisto
         ),
@@ -140,7 +142,11 @@ def elenca_portafogli(
     """Restituisce tutti i portafogli salvati."""
 
     portafogli = sessione.scalars(
-        select(Portafoglio).order_by(Portafoglio.id)
+        select(
+            Portafoglio
+        ).order_by(
+            Portafoglio.id
+        )
     ).all()
 
     return [
@@ -159,7 +165,7 @@ def rimuovi_portafoglio(
     portafoglio_id: int,
     sessione: SessioneDatabase,
 ) -> Response:
-    """Elimina un portafoglio e tutti i dati associati."""
+    """Elimina un portafoglio e tutti i titoli associati."""
 
     try:
         elimina_portafoglio(
@@ -169,7 +175,9 @@ def rimuovi_portafoglio(
     except ErrorePortafoglioGestioneNonTrovato as errore:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(errore),
+            detail=str(
+                errore
+            ),
         ) from errore
 
     return Response(
@@ -186,7 +194,7 @@ def inserisci_titolo_manualmente(
     dati: TitoloPossedutoInIngresso,
     sessione: SessioneDatabase,
 ) -> dict[str, object]:
-    """Inserisce manualmente un titolo all'interno di un portafoglio."""
+    """Inserisce manualmente un titolo in un portafoglio."""
 
     try:
         titolo = aggiungi_titolo_manualmente(
@@ -197,12 +205,16 @@ def inserisci_titolo_manualmente(
     except ErrorePortafoglioGestioneNonTrovato as errore:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(errore),
+            detail=str(
+                errore
+            ),
         ) from errore
     except ErroreTickerGiaPresente as errore:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=str(errore),
+            detail=str(
+                errore
+            ),
         ) from errore
 
     return converti_titolo_in_dizionario(
@@ -231,12 +243,16 @@ def elenca_titoli_posseduti(
         )
 
     titoli = sessione.scalars(
-        select(TitoloPosseduto)
+        select(
+            TitoloPosseduto
+        )
         .where(
             TitoloPosseduto.portafoglio_id
             == portafoglio_id
         )
-        .order_by(TitoloPosseduto.ticker)
+        .order_by(
+            TitoloPosseduto.ticker
+        )
     ).all()
 
     return [
@@ -268,17 +284,23 @@ def aggiorna_titolo(
     except ErrorePortafoglioGestioneNonTrovato as errore:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(errore),
+            detail=str(
+                errore
+            ),
         ) from errore
     except ErroreTitoloNonTrovato as errore:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(errore),
+            detail=str(
+                errore
+            ),
         ) from errore
     except ErroreTickerGiaPresente as errore:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=str(errore),
+            detail=str(
+                errore
+            ),
         ) from errore
 
     return converti_titolo_in_dizionario(
@@ -306,12 +328,16 @@ def rimuovi_titolo(
     except ErrorePortafoglioGestioneNonTrovato as errore:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(errore),
+            detail=str(
+                errore
+            ),
         ) from errore
     except ErroreTitoloNonTrovato as errore:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(errore),
+            detail=str(
+                errore
+            ),
         ) from errore
 
     return Response(
@@ -333,7 +359,7 @@ async def carica_file_portafoglio(
     ],
     sessione: SessioneDatabase,
 ) -> dict[str, object]:
-    """Carica un file CSV oppure JSON all'interno di un portafoglio."""
+    """Carica un file CSV oppure JSON in un portafoglio."""
 
     nome_file = (
         file_caricato.filename
@@ -344,14 +370,16 @@ async def carica_file_portafoglio(
 
     dimensione_massima = 2 * 1024 * 1024
 
-    if len(contenuto_file) > dimensione_massima:
+    if len(
+        contenuto_file
+    ) > dimensione_massima:
         raise HTTPException(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail="Il file supera la dimensione massima di 2 MB.",
         )
 
     try:
-        importazione = importa_file_in_portafoglio(
+        numero_titoli_importati = importa_file_in_portafoglio(
             sessione=sessione,
             portafoglio_id=portafoglio_id,
             nome_file=nome_file,
@@ -360,41 +388,31 @@ async def carica_file_portafoglio(
     except ErrorePortafoglioImportazioneNonTrovato as errore:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(errore),
+            detail=str(
+                errore
+            ),
         ) from errore
     except ErroreFormatoFileNonSupportato as errore:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(errore),
+            detail=str(
+                errore
+            ),
+        ) from errore
+    except ValueError as errore:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(
+                errore
+            ),
         ) from errore
 
-    sessione.flush()
-
-    errori = sessione.scalars(
-        select(ErroreImportazione)
-        .where(
-            ErroreImportazione.importazione_id
-            == importazione.id
-        )
-        .order_by(ErroreImportazione.id)
-    ).all()
-
     return {
-        "importazione_id": importazione.id,
-        "nome_file": importazione.nome_file_originale,
-        "formato_file": importazione.formato_file,
-        "stato": importazione.stato,
-        "righe_totali": importazione.righe_totali,
-        "righe_importate": importazione.righe_importate,
-        "errori": [
-            {
-                "numero_riga": errore.numero_riga,
-                "nome_campo": errore.nome_campo,
-                "messaggio": errore.messaggio,
-            }
-            for errore in errori
-        ],
+        "nome_file": nome_file,
+        "stato": "completata",
+        "righe_importate": numero_titoli_importati,
     }
+
 
 @applicazione.post(
     "/portafogli/{portafoglio_id}/aggiorna-quotazioni",
@@ -412,18 +430,24 @@ def aggiorna_quotazioni(
         )
     except ErrorePortafoglioQuotazioniNonTrovato as errore:
         raise HTTPException(
-            status_code=404,
-            detail=str(errore),
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(
+                errore
+            ),
         ) from errore
     except ErroreConfigurazioneQuotazioni as errore:
         raise HTTPException(
-            status_code=500,
-            detail=str(errore),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(
+                errore
+            ),
         ) from errore
     except ErroreServizioQuotazioni as errore:
         raise HTTPException(
-            status_code=502,
-            detail=str(errore),
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(
+                errore
+            ),
         ) from errore
 
 
@@ -443,6 +467,8 @@ def ottieni_riepilogo_portafoglio(
         )
     except ErrorePortafoglioQuotazioniNonTrovato as errore:
         raise HTTPException(
-            status_code=404,
-            detail=str(errore),
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(
+                errore
+            ),
         ) from errore

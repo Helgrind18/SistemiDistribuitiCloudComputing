@@ -1,3 +1,5 @@
+# Serve a controllare i dati in ingresso PRIMA di inserirli nel db. Della validazione se ne occupa pydantic
+
 from datetime import date
 from decimal import Decimal
 from typing import Annotated

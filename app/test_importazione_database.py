@@ -4,29 +4,39 @@ from sqlalchemy import select
 
 from app.connessione_database import SessioneLocale
 from app.modelli import (
-    ErroreImportazione,
     Importazione,
     Portafoglio,
     TitoloPosseduto,
 )
 from app.servizio_importazione import importa_file_in_portafoglio
-from app.servizio_portafogli import crea_portafoglio
 
 
-NOME_PORTAFOGLIO_TEST = "Portafoglio dimostrativo"
+NOME_PORTAFOGLIO_TEST = "Portafoglio test importazione semplice"
 
 
-def leggi_file_esempio(nome_file: str) -> bytes:
+def leggi_file_esempio(
+    nome_file: str,
+) -> bytes:
     """Legge un file dalla cartella esempi."""
 
-    cartella_progetto = Path(__file__).resolve().parent.parent
-    percorso_file = cartella_progetto / "esempi" / nome_file
+    cartella_progetto = (
+        Path(__file__)
+        .resolve()
+        .parent
+        .parent
+    )
+
+    percorso_file = (
+        cartella_progetto
+        / "esempi"
+        / nome_file
+    )
 
     return percorso_file.read_bytes()
 
 
-def elimina_dati_test_precedenti() -> None:
-    """Elimina il portafoglio generato da esecuzioni precedenti."""
+def elimina_vecchi_dati_test() -> None:
+    """Elimina eventuali portafogli creati da test precedenti."""
 
     with SessioneLocale.begin() as sessione:
         portafogli = sessione.scalars(
@@ -36,29 +46,36 @@ def elimina_dati_test_precedenti() -> None:
         ).all()
 
         for portafoglio in portafogli:
-            sessione.delete(portafoglio)
+            sessione.delete(
+                portafoglio
+            )
 
 
-def esegui_test() -> None:
-    """Verifica il salvataggio atomico delle importazioni."""
-
-    elimina_dati_test_precedenti()
+def crea_portafoglio_test() -> int:
+    """Crea un portafoglio vuoto e restituisce il suo id."""
 
     with SessioneLocale.begin() as sessione:
-        portafoglio = crea_portafoglio(
-            sessione=sessione,
+        portafoglio = Portafoglio(
             nome=NOME_PORTAFOGLIO_TEST,
-            descrizione="Portafoglio usato per il test.",
+            descrizione="Portafoglio temporaneo usato per il test.",
         )
 
-        portafoglio_id = portafoglio.id
-
-        print(
-            f"Portafoglio creato con id={portafoglio_id}"
+        sessione.add(
+            portafoglio
         )
+
+        sessione.flush()
+
+        return portafoglio.id
+
+
+def prova_importazione_valida(
+    portafoglio_id: int,
+) -> None:
+    """Importa un CSV corretto."""
 
     with SessioneLocale.begin() as sessione:
-        importazione_valida = importa_file_in_portafoglio(
+        importazione = importa_file_in_portafoglio(
             sessione=sessione,
             portafoglio_id=portafoglio_id,
             nome_file="portafoglio_valido.csv",
@@ -67,71 +84,142 @@ def esegui_test() -> None:
             ),
         )
 
-        print(
-            "Importazione valida:"
-            f" stato={importazione_valida.stato},"
-            f" righe_importate="
-            f"{importazione_valida.righe_importate}"
-        )
+        print("\nImportazione valida:")
+        print(f"  stato={importazione.stato}")
+        print(f"  righe_importate={importazione.righe_importate}")
 
-    with SessioneLocale.begin() as sessione:
-        importazione_errata = importa_file_in_portafoglio(
-            sessione=sessione,
-            portafoglio_id=portafoglio_id,
-            nome_file="portafoglio_non_valido.csv",
-            contenuto_file=leggi_file_esempio(
-                "portafoglio_non_valido.csv"
-            ),
-        )
 
-        importazione_errata_id = importazione_errata.id
+def prova_importazione_non_valida(
+    portafoglio_id: int,
+) -> None:
+    """Verifica che un CSV errato venga rifiutato."""
 
-        print(
-            "Importazione errata:"
-            f" stato={importazione_errata.stato},"
-            f" righe_importate="
-            f"{importazione_errata.righe_importate}"
-        )
+    print("\nImportazione non valida:")
+
+    try:
+        with SessioneLocale.begin() as sessione:
+            importa_file_in_portafoglio(
+                sessione=sessione,
+                portafoglio_id=portafoglio_id,
+                nome_file="portafoglio_non_valido.csv",
+                contenuto_file=leggi_file_esempio(
+                    "portafoglio_non_valido.csv"
+                ),
+            )
+    except ValueError as errore:
+        print(f"  rifiutata correttamente: {errore}")
+        return
+
+    raise RuntimeError(
+        "Errore: il file non valido è stato accettato."
+    )
+
+
+def prova_importazione_duplicata(
+    portafoglio_id: int,
+) -> None:
+    """Verifica che i ticker già salvati non vengano inseriti nuovamente."""
+
+    print("\nSeconda importazione dello stesso CSV:")
+
+    try:
+        with SessioneLocale.begin() as sessione:
+            importa_file_in_portafoglio(
+                sessione=sessione,
+                portafoglio_id=portafoglio_id,
+                nome_file="portafoglio_valido.csv",
+                contenuto_file=leggi_file_esempio(
+                    "portafoglio_valido.csv"
+                ),
+            )
+    except ValueError as errore:
+        print(f"  rifiutata correttamente: {errore}")
+        return
+
+    raise RuntimeError(
+        "Errore: i ticker duplicati sono stati accettati."
+    )
+
+
+def stampa_dati_salvati(
+    portafoglio_id: int,
+) -> None:
+    """Mostra i titoli e le importazioni salvati nel database."""
 
     with SessioneLocale() as sessione:
-        titoli_salvati = sessione.scalars(
-            select(TitoloPosseduto).where(
+        titoli = sessione.scalars(
+            select(TitoloPosseduto)
+            .where(
                 TitoloPosseduto.portafoglio_id
                 == portafoglio_id
             )
-        ).all()
-
-        errori_salvati = sessione.scalars(
-            select(ErroreImportazione).where(
-                ErroreImportazione.importazione_id
-                == importazione_errata_id
+            .order_by(
+                TitoloPosseduto.ticker
             )
         ).all()
 
-        print(
-            f"Titoli presenti nel database: "
-            f"{len(titoli_salvati)}"
-        )
+        importazioni = sessione.scalars(
+            select(Importazione)
+            .where(
+                Importazione.portafoglio_id
+                == portafoglio_id
+            )
+            .order_by(
+                Importazione.id
+            )
+        ).all()
 
-        for titolo in titoli_salvati:
+        print("\nTitoli salvati nel database:")
+        print(f"  totale={len(titoli)}")
+
+        for titolo in titoli:
             print(
-                f"  {titolo.ticker}:"
-                f" quantita={titolo.quantita},"
-                f" prezzo_medio="
-                f"{titolo.prezzo_medio_acquisto}"
+                f"  {titolo.ticker}: "
+                f"quantita={titolo.quantita}, "
+                f"prezzo={titolo.prezzo_medio_acquisto}"
             )
 
-        print(
-            f"Errori salvati nel database: "
-            f"{len(errori_salvati)}"
-        )
+        print("\nImportazioni salvate nel database:")
+        print(f"  totale={len(importazioni)}")
 
-        for errore in errori_salvati:
+        for importazione in importazioni:
             print(
-                f"  riga={errore.numero_riga},"
-                f" campo={errore.nome_campo},"
-                f" messaggio={errore.messaggio}"
+                f"  id={importazione.id}, "
+                f"stato={importazione.stato}, "
+                f"righe_importate={importazione.righe_importate}"
             )
+
+
+def esegui_test() -> None:
+    """Esegue tutte le verifiche del servizio di importazione."""
+
+    elimina_vecchi_dati_test()
+
+    portafoglio_id = crea_portafoglio_test()
+
+    print(
+        f"Portafoglio di test creato con id={portafoglio_id}"
+    )
+
+    prova_importazione_valida(
+        portafoglio_id
+    )
+
+    prova_importazione_non_valida(
+        portafoglio_id
+    )
+
+    prova_importazione_duplicata(
+        portafoglio_id
+    )
+
+    stampa_dati_salvati(
+        portafoglio_id
+    )
+
+    elimina_vecchi_dati_test()
+
+    print("\nTest completato correttamente.")
 
 
 if __name__ == "__main__":
