@@ -118,6 +118,8 @@ def ottieni_titoli(
         return []
 
     return risposta.json()
+
+
 def aggiorna_quotazioni_portafoglio(
     portafoglio_id: int,
 ) -> dict | None:
@@ -222,13 +224,11 @@ def prepara_tabella_riepilogo(
             "Variazione": formatta_percentuale(
                 titolo["variazione_percentuale"]
             ),
-            "Quotazione recuperata il": (
-                titolo["recuperata_il"]
-                or "Non disponibile"
-            ),
+            "Quotazione recuperata il": titolo["recuperata_il"],
         }
         for titolo in titoli
     ]
+
 
 def crea_portafoglio(
     nome: str,
@@ -411,33 +411,17 @@ def importa_file(
         return
 
     if not risposta.ok:
-        mostra_errore_api(risposta)
+        mostra_errore_api(
+            risposta
+        )
         return
 
     risultato = risposta.json()
 
-    if risultato["stato"] == "completata":
-        salva_messaggio_successo(
-            "Importazione completata: "
-            f"{risultato['righe_importate']} titoli inseriti."
-        )
-
-    st.error(
-        "Importazione fallita. "
-        "Nessun titolo è stato inserito."
+    salva_messaggio_successo(
+        "Importazione completata: "
+        f"{risultato['righe_importate']} titoli inseriti."
     )
-
-    errori = risultato.get(
-        "errori",
-        [],
-    )
-
-    if errori:
-        st.dataframe(
-            errori,
-            hide_index=True,
-            use_container_width=True,
-        )
 
 
 def formatta_portafoglio(
@@ -489,12 +473,18 @@ messaggio_successo = st.session_state.pop(
 )
 
 if messaggio_successo:
-    st.success(messaggio_successo)
+    st.success(
+        messaggio_successo
+    )
 
 if verifica_backend():
-    st.success("Backend FastAPI raggiungibile.")
+    st.success(
+        "Backend FastAPI raggiungibile."
+    )
 else:
-    st.error("Backend FastAPI non raggiungibile.")
+    st.error(
+        "Backend FastAPI non raggiungibile."
+    )
     st.stop()
 
 scheda_dashboard, scheda_portafogli, scheda_gestione = st.tabs(
@@ -504,8 +494,11 @@ scheda_dashboard, scheda_portafogli, scheda_gestione = st.tabs(
         "Gestione titoli",
     ]
 )
+
 with scheda_dashboard:
-    st.header("Dashboard finanziaria")
+    st.header(
+        "Dashboard finanziaria"
+    )
 
     st.write(
         "Visualizza il riepilogo del portafoglio utilizzando "
@@ -564,27 +557,10 @@ with scheda_dashboard:
                     ]
                 )
 
-                numero_totali = risultato_aggiornamento[
-                    "ticker_totali"
-                ]
-
-                if risultato_aggiornamento["errori"]:
-                    st.warning(
-                        "Aggiornamento parzialmente completato: "
-                        f"{numero_aggiornati} ticker aggiornati "
-                        f"su {numero_totali}."
-                    )
-
-                    st.dataframe(
-                        risultato_aggiornamento["errori"],
-                        hide_index=True,
-                        use_container_width=True,
-                    )
-                else:
-                    st.success(
-                        "Quotazioni aggiornate correttamente: "
-                        f"{numero_aggiornati} ticker aggiornati."
-                    )
+                st.success(
+                    "Quotazioni aggiornate correttamente: "
+                    f"{numero_aggiornati} ticker aggiornati."
+                )
 
         riepilogo = ottieni_riepilogo_portafoglio(
             portafoglio_id=portafoglio_dashboard_id,
@@ -595,21 +571,14 @@ with scheda_dashboard:
                 f"Riepilogo: {riepilogo['nome_portafoglio']}"
             )
 
-            if not riepilogo["riepilogo_completo"]:
-                st.warning(
-                    "Il riepilogo è parziale. Non sono disponibili "
-                    "quotazioni aggiornate per: "
-                    + ", ".join(
-                        riepilogo["quotazioni_mancanti"]
-                    )
-                )
-
             (
                 colonna_capitale,
                 colonna_valore,
                 colonna_guadagno,
                 colonna_variazione,
-            ) = st.columns(4)
+            ) = st.columns(
+                4
+            )
 
             with colonna_capitale:
                 st.metric(
@@ -651,14 +620,9 @@ with scheda_dashboard:
                     ),
                 )
 
-            if not riepilogo["riepilogo_completo"]:
-                st.caption(
-                    "Guadagno, perdita e valore corrente sono calcolati "
-                    "soltanto sui titoli per i quali è disponibile una "
-                    "quotazione."
-                )
-
-            st.subheader("Dettaglio dei titoli")
+            st.subheader(
+                "Dettaglio dei titoli"
+            )
 
             dettagli_titoli = prepara_tabella_riepilogo(
                 riepilogo["titoli"]
@@ -676,9 +640,13 @@ with scheda_dashboard:
                 )
 
 with scheda_portafogli:
-    st.header("Crea un nuovo portafoglio")
+    st.header(
+        "Crea un nuovo portafoglio"
+    )
 
-    with st.form("creazione_portafoglio"):
+    with st.form(
+        "creazione_portafoglio"
+    ):
         nome = st.text_input(
             "Nome del portafoglio",
             max_chars=100,
@@ -708,7 +676,9 @@ with scheda_portafogli:
                     ),
                 )
 
-    st.header("Portafogli presenti")
+    st.header(
+        "Portafogli presenti"
+    )
 
     portafogli = ottieni_portafogli()
 
@@ -724,8 +694,7 @@ with scheda_portafogli:
             expanded=False,
         ):
             st.warning(
-                "L'eliminazione rimuove anche i titoli "
-                "e le importazioni associati."
+                "L'eliminazione rimuove anche i titoli associati."
             )
 
             portafoglio_da_eliminare_id = st.selectbox(
@@ -766,9 +735,10 @@ with scheda_portafogli:
             "Non sono ancora presenti portafogli."
         )
 
-
 with scheda_gestione:
-    st.header("Gestione dei titoli posseduti")
+    st.header(
+        "Gestione dei titoli posseduti"
+    )
 
     portafogli = ottieni_portafogli()
 
@@ -792,7 +762,9 @@ with scheda_gestione:
             key="portafoglio_selezionato",
         )
 
-        st.subheader("Titoli presenti")
+        st.subheader(
+            "Titoli presenti"
+        )
 
         titoli = ottieni_titoli(
             portafoglio_id=portafoglio_id,
@@ -810,10 +782,14 @@ with scheda_gestione:
                 "non contiene ancora titoli."
             )
 
-        colonna_inserimento, colonna_importazione = st.columns(2)
+        colonna_inserimento, colonna_importazione = st.columns(
+            2
+        )
 
         with colonna_inserimento:
-            st.subheader("Inserimento manuale")
+            st.subheader(
+                "Inserimento manuale"
+            )
 
             with st.form(
                 f"inserimento_manuale_{portafoglio_id}"
@@ -862,11 +838,17 @@ with scheda_gestione:
 
                 if conferma_inserimento:
                     if not ticker.strip():
-                        st.warning("Inserire il ticker.")
+                        st.warning(
+                            "Inserire il ticker."
+                        )
                     elif not settore.strip():
-                        st.warning("Inserire il settore.")
+                        st.warning(
+                            "Inserire il settore."
+                        )
                     elif not mercato.strip():
-                        st.warning("Inserire il mercato.")
+                        st.warning(
+                            "Inserire il mercato."
+                        )
                     else:
                         inserisci_titolo_manualmente(
                             portafoglio_id=portafoglio_id,
@@ -881,7 +863,9 @@ with scheda_gestione:
                         )
 
         with colonna_importazione:
-            st.subheader("Importazione da file")
+            st.subheader(
+                "Importazione da file"
+            )
 
             file_caricato = st.file_uploader(
                 "Seleziona un file CSV oppure JSON",
@@ -908,7 +892,9 @@ with scheda_gestione:
 
         if titoli:
             st.divider()
-            st.subheader("Modifica o elimina un titolo")
+            st.subheader(
+                "Modifica o elimina un titolo"
+            )
 
             titolo_id = st.selectbox(
                 "Seleziona un titolo",
@@ -1002,11 +988,17 @@ with scheda_gestione:
 
                     if conferma_modifica:
                         if not ticker_modificato.strip():
-                            st.warning("Inserire il ticker.")
+                            st.warning(
+                                "Inserire il ticker."
+                            )
                         elif not settore_modificato.strip():
-                            st.warning("Inserire il settore.")
+                            st.warning(
+                                "Inserire il settore."
+                            )
                         elif not mercato_modificato.strip():
-                            st.warning("Inserire il mercato.")
+                            st.warning(
+                                "Inserire il mercato."
+                            )
                         else:
                             modifica_titolo(
                                 portafoglio_id=portafoglio_id,
