@@ -2,7 +2,9 @@ import os
 
 from dotenv import load_dotenv
 from google import genai
+import logging
 
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -56,6 +58,10 @@ def genera_testo(
             contents=richiesta,
         )
     except Exception as errore:
+        logger.exception(
+            "Errore durante la richiesta inviata a Gemini."
+        )
+
         raise ErroreServizioAnalisiAI(
             "Non è stato possibile ottenere una risposta da Gemini."
         ) from errore
