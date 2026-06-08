@@ -17,11 +17,13 @@ URL_API = os.getenv(
 ).rstrip("/")
 
 TIMEOUT_SECONDI = 10
+TIMEOUT_ANALISI_AI_SECONDI = 30
 
 
 def invia_richiesta(
     metodo: str,
     percorso: str,
+    timeout: int = TIMEOUT_SECONDI,
     **parametri: Any,
 ) -> requests.Response | None:
     """Invia una richiesta HTTP al backend FastAPI."""
@@ -30,7 +32,7 @@ def invia_richiesta(
         return requests.request(
             method=metodo,
             url=f"{URL_API}{percorso}",
-            timeout=TIMEOUT_SECONDI,
+            timeout=timeout,
             **parametri,
         )
     except requests.RequestException as errore:
@@ -166,6 +168,144 @@ def ottieni_riepilogo_portafoglio(
     return risposta.json()
 
 
+def genera_analisi_ai_portafoglio(
+    portafoglio_id: int,
+) -> str | None:
+    """Richiede al backend un'analisi AI del portafoglio."""
+
+    risposta = invia_richiesta(
+        metodo="POST",
+        percorso=(
+            f"/portafogli/{portafoglio_id}"
+            "/analisi-ai"
+        ),
+        timeout=TIMEOUT_ANALISI_AI_SECONDI,
+    )
+
+    if risposta is None:
+        return None
+
+    if not risposta.ok:
+        mostra_errore_api(risposta)
+        return None
+
+    risultato = risposta.json()
+
+    return risultato["analisi"]
+
+
+def genera_suggerimenti_ai_titoli(
+    portafoglio_id: int,
+    titolo_id: int,
+) -> dict | None:
+    """Richiede al backend titoli simili per settore."""
+
+    risposta = invia_richiesta(
+        metodo="POST",
+        percorso=(
+            f"/portafogli/{portafoglio_id}"
+            f"/titoli/{titolo_id}"
+            "/suggerimenti-ai"
+        ),
+        timeout=TIMEOUT_ANALISI_AI_SECONDI,
+    )
+
+    if risposta is None:
+        return None
+
+    if not risposta.ok:
+        mostra_errore_api(risposta)
+        return None
+
+    return risposta.json()
+
+
+def ottieni_chiave_analisi_ai(
+    portafoglio_id: int,
+) -> str:
+    """Restituisce la chiave usata per salvare l'analisi nella sessione."""
+
+    return f"analisi_ai_portafoglio_{portafoglio_id}"
+
+
+def elimina_analisi_ai_salvata(
+    portafoglio_id: int,
+) -> None:
+    """Elimina l'analisi AI salvata quando cambiano i dati del portafoglio."""
+
+    st.session_state.pop(
+        ottieni_chiave_analisi_ai(
+            portafoglio_id=portafoglio_id,
+        ),
+        None,
+    )
+
+
+def ottieni_chiave_suggerimenti_ai(
+    portafoglio_id: int,
+    titolo_id: int,
+) -> str:
+    """Restituisce la chiave usata per salvare i suggerimenti."""
+
+    return (
+        f"suggerimenti_ai_portafoglio_{portafoglio_id}"
+        f"_titolo_{titolo_id}"
+    )
+
+
+def elimina_suggerimenti_ai_salvati(
+    portafoglio_id: int,
+) -> None:
+    """Elimina i suggerimenti salvati quando cambiano i titoli."""
+
+    prefisso = (
+        f"suggerimenti_ai_portafoglio_{portafoglio_id}"
+        "_titolo_"
+    )
+
+    chiavi_da_eliminare = [
+        chiave
+        for chiave in st.session_state
+        if chiave.startswith(prefisso)
+    ]
+
+    for chiave in chiavi_da_eliminare:
+        st.session_state.pop(
+            chiave,
+            None,
+        )
+
+
+def elimina_risultati_ai_salvati(
+    portafoglio_id: int,
+) -> None:
+    """Elimina analisi e suggerimenti salvati per un portafoglio."""
+
+    elimina_analisi_ai_salvata(
+        portafoglio_id=portafoglio_id,
+    )
+
+    elimina_suggerimenti_ai_salvati(
+        portafoglio_id=portafoglio_id,
+    )
+
+
+def prepara_tabella_suggerimenti(
+    suggerimenti: list[dict],
+) -> list[dict]:
+    """Prepara i suggerimenti per la tabella Streamlit."""
+
+    return [
+        {
+            "Ticker": titolo["ticker"],
+            "Nome": titolo["nome"],
+            "Settore": titolo["settore"],
+            "Mercato": titolo["mercato"],
+        }
+        for titolo in suggerimenti
+    ]
+
+
 def formatta_numero(
     valore: str | float | int | None,
 ) -> str:
@@ -277,6 +417,10 @@ def elimina_portafoglio(
         mostra_errore_api(risposta)
         return
 
+    elimina_risultati_ai_salvati(
+        portafoglio_id=portafoglio_id,
+    )
+
     salva_messaggio_successo(
         "Portafoglio eliminato correttamente."
     )
@@ -314,6 +458,10 @@ def inserisci_titolo_manualmente(
         return
 
     titolo = risposta.json()
+
+    elimina_risultati_ai_salvati(
+        portafoglio_id=portafoglio_id,
+    )
 
     salva_messaggio_successo(
         f"Titolo {titolo['ticker']} inserito correttamente."
@@ -357,6 +505,10 @@ def modifica_titolo(
 
     titolo = risposta.json()
 
+    elimina_risultati_ai_salvati(
+        portafoglio_id=portafoglio_id,
+    )
+
     salva_messaggio_successo(
         f"Titolo {titolo['ticker']} modificato correttamente."
     )
@@ -382,6 +534,10 @@ def elimina_titolo(
     if risposta.status_code != 204:
         mostra_errore_api(risposta)
         return
+
+    elimina_risultati_ai_salvati(
+        portafoglio_id=portafoglio_id,
+    )
 
     salva_messaggio_successo(
         "Titolo eliminato correttamente."
@@ -417,6 +573,10 @@ def importa_file(
         return
 
     risultato = risposta.json()
+
+    elimina_risultati_ai_salvati(
+        portafoglio_id=portafoglio_id,
+    )
 
     salva_messaggio_successo(
         "Importazione completata: "
@@ -557,6 +717,10 @@ with scheda_dashboard:
                     ]
                 )
 
+                elimina_risultati_ai_salvati(
+                    portafoglio_id=portafoglio_dashboard_id,
+                )
+
                 st.success(
                     "Quotazioni aggiornate correttamente: "
                     f"{numero_aggiornati} ticker aggiornati."
@@ -638,6 +802,150 @@ with scheda_dashboard:
                 st.info(
                     "Il portafoglio non contiene ancora titoli."
                 )
+
+            st.divider()
+            st.subheader(
+                "Analisi AI del portafoglio"
+            )
+
+            st.caption(
+                "Gemini genera una breve analisi descrittiva usando "
+                "i dati del riepilogo. Il testo ha finalità informative."
+            )
+
+            if dettagli_titoli:
+                if st.button(
+                    "Genera analisi AI",
+                    key=(
+                        "genera_analisi_ai_"
+                        f"{portafoglio_dashboard_id}"
+                    ),
+                ):
+                    with st.spinner(
+                        "Generazione dell'analisi AI in corso..."
+                    ):
+                        analisi_ai = genera_analisi_ai_portafoglio(
+                            portafoglio_id=portafoglio_dashboard_id,
+                        )
+
+                    if analisi_ai is not None:
+                        st.session_state[
+                            ottieni_chiave_analisi_ai(
+                                portafoglio_id=portafoglio_dashboard_id,
+                            )
+                        ] = analisi_ai
+
+                analisi_ai_salvata = st.session_state.get(
+                    ottieni_chiave_analisi_ai(
+                        portafoglio_id=portafoglio_dashboard_id,
+                    )
+                )
+
+                if analisi_ai_salvata:
+                    st.markdown(
+                        analisi_ai_salvata
+                    )
+            else:
+                st.info(
+                    "Aggiungere almeno un titolo prima di generare "
+                    "l'analisi AI."
+                )
+
+        st.divider()
+        st.subheader(
+            "Titoli simili per settore"
+        )
+
+        st.caption(
+            "L'applicazione seleziona titoli dello stesso settore da "
+            "un catalogo controllato. Gemini genera una breve "
+            "spiegazione descrittiva dei risultati."
+        )
+
+        titoli_dashboard = ottieni_titoli(
+            portafoglio_id=portafoglio_dashboard_id,
+        )
+
+        if titoli_dashboard:
+            titolo_riferimento_id = st.selectbox(
+                "Seleziona un titolo di riferimento",
+                options=[
+                    titolo["id"]
+                    for titolo in titoli_dashboard
+                ],
+                format_func=lambda identificativo: (
+                    formatta_titolo(
+                        identificativo,
+                        titoli_dashboard,
+                    )
+                ),
+                key=(
+                    "titolo_riferimento_suggerimenti_"
+                    f"{portafoglio_dashboard_id}"
+                ),
+            )
+
+            if st.button(
+                "Genera suggerimenti AI",
+                key=(
+                    "genera_suggerimenti_ai_"
+                    f"{portafoglio_dashboard_id}_"
+                    f"{titolo_riferimento_id}"
+                ),
+            ):
+                with st.spinner(
+                    "Generazione dei suggerimenti AI in corso..."
+                ):
+                    risultato_suggerimenti = (
+                        genera_suggerimenti_ai_titoli(
+                            portafoglio_id=portafoglio_dashboard_id,
+                            titolo_id=titolo_riferimento_id,
+                        )
+                    )
+
+                if risultato_suggerimenti is not None:
+                    st.session_state[
+                        ottieni_chiave_suggerimenti_ai(
+                            portafoglio_id=portafoglio_dashboard_id,
+                            titolo_id=titolo_riferimento_id,
+                        )
+                    ] = risultato_suggerimenti
+
+            suggerimenti_salvati = st.session_state.get(
+                ottieni_chiave_suggerimenti_ai(
+                    portafoglio_id=portafoglio_dashboard_id,
+                    titolo_id=titolo_riferimento_id,
+                )
+            )
+
+            if suggerimenti_salvati:
+                suggerimenti = suggerimenti_salvati[
+                    "suggerimenti"
+                ]
+
+                if suggerimenti:
+                    st.dataframe(
+                        prepara_tabella_suggerimenti(
+                            suggerimenti
+                        ),
+                        hide_index=True,
+                        use_container_width=True,
+                    )
+                else:
+                    st.info(
+                        "Non sono disponibili altri titoli dello stesso "
+                        "settore nel catalogo dimostrativo."
+                    )
+
+                st.markdown(
+                    suggerimenti_salvati["spiegazione"]
+                )
+        else:
+            st.info(
+                "Aggiungere almeno un titolo prima di generare "
+                "suggerimenti."
+            )
+
 
 with scheda_portafogli:
     st.header(

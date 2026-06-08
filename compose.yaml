@@ -26,5 +26,62 @@ services:
       timeout: 5s
       retries: 10
 
+  backend:
+    build: .
+    container_name: portfolio-backend
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+    ports:
+      - "8000:8000"
+
+    command: >
+      sh -c "
+      python -m alembic upgrade head &&
+      python -m uvicorn app.api:applicazione
+      --host 0.0.0.0
+      --port 8000
+      "
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/verifica-salute')\""
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  frontend:
+    build: .
+    container_name: portfolio-frontend
+    restart: unless-stopped
+
+    environment:
+      URL_API: http://backend:8000
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    ports:
+      - "8501:8501"
+
+    command: >
+      python -m streamlit run interfaccia/applicazione.py
+      --server.address=0.0.0.0
+      --server.port=8501
+
 volumes:
   mysql_data:

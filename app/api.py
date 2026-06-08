@@ -21,6 +21,11 @@ from app.schemi import (
     PortafoglioInCreazione,
     TitoloPossedutoInIngresso,
 )
+from app.servizio_analisi_ai import (
+    ErroreConfigurazioneAnalisiAI,
+    ErroreServizioAnalisiAI,
+    genera_analisi_portafoglio,
+)
 from app.servizio_importazione import (
     ErroreFormatoFileNonSupportato,
     ErrorePortafoglioNonTrovato as ErrorePortafoglioImportazioneNonTrovato,
@@ -43,7 +48,7 @@ from app.servizio_quotazioni import (
     aggiorna_quotazioni_portafoglio,
     calcola_riepilogo_portafoglio,
 )
-
+from app.servizio_suggerimenti_ai import genera_suggerimenti_titoli_simili
 
 applicazione = FastAPI(
     title="Gestione portafogli finanziari",
@@ -472,9 +477,121 @@ def ottieni_riepilogo_portafoglio(
                 errore
             ),
         ) from errore
+
+@applicazione.post(
+    "/portafogli/{portafoglio_id}/analisi-ai",
+)
+def genera_analisi_ai_portafoglio(
+    portafoglio_id: int,
+    sessione: SessioneDatabase,
+) -> dict[str, str]:
+    """Genera una breve analisi descrittiva del portafoglio tramite Gemini."""
+
+    try:
+        riepilogo = calcola_riepilogo_portafoglio(
+            sessione=sessione,
+            portafoglio_id=portafoglio_id,
+        )
+
+        analisi = genera_analisi_portafoglio(
+            riepilogo=riepilogo,
+        )
+    except ErrorePortafoglioQuotazioniNonTrovato as errore:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(
+                errore
+            ),
+        ) from errore
     except ErroreServizioQuotazioni as errore:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(
+                errore
+            ),
+        ) from errore
+    except ErroreConfigurazioneAnalisiAI as errore:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(
+                errore
+            ),
+        ) from errore
+    except ErroreServizioAnalisiAI as errore:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(
+                errore
+            ),
+        ) from errore
+
+    return {
+        "analisi": analisi,
+    }
+
+@applicazione.post(
+    "/portafogli/{portafoglio_id}/titoli/{titolo_id}/suggerimenti-ai",
+)
+def ottieni_suggerimenti_titoli_ai(
+    portafoglio_id: int,
+    titolo_id: int,
+    sessione: SessioneDatabase,
+) -> dict[str, object]:
+    """Suggerisce titoli simili per settore."""
+
+    portafoglio = sessione.get(
+        Portafoglio,
+        portafoglio_id,
+    )
+
+    if portafoglio is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Il portafoglio richiesto non esiste.",
+        )
+
+    titolo_riferimento = sessione.get(
+        TitoloPosseduto,
+        titolo_id,
+    )
+
+    if (
+        titolo_riferimento is None
+        or titolo_riferimento.portafoglio_id != portafoglio_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Il titolo richiesto non esiste nel portafoglio.",
+        )
+
+    titoli_posseduti = sessione.scalars(
+        select(
+            TitoloPosseduto
+        ).where(
+            TitoloPosseduto.portafoglio_id
+            == portafoglio_id
+        )
+    ).all()
+
+    try:
+        return genera_suggerimenti_titoli_simili(
+            ticker_riferimento=titolo_riferimento.ticker,
+            settore_riferimento=titolo_riferimento.settore,
+            ticker_posseduti=[
+                titolo.ticker
+                for titolo in titoli_posseduti
+            ],
+        )
+    except ErroreConfigurazioneAnalisiAI as errore:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(
+                errore
+            ),
+        ) from errore
+    except ErroreServizioAnalisiAI as errore:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(
                 errore
             ),
