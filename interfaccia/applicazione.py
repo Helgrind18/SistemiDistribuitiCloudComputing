@@ -122,6 +122,62 @@ def ottieni_titoli(
     return risposta.json()
 
 
+def cerca_titoli(
+    testo: str,
+    limite: int = 5,
+) -> dict | None:
+    """Richiede al backend una ricerca assistita dei titoli."""
+
+    risposta = invia_richiesta(
+        metodo="GET",
+        percorso="/ricerca-titoli",
+        params={
+            "testo": testo,
+            "limite": limite,
+        },
+    )
+
+    if risposta is None:
+        return None
+
+    if not risposta.ok:
+        mostra_errore_api(
+            risposta
+        )
+        return None
+
+    return risposta.json()
+
+
+def formatta_risultato_ricerca(
+    risultato: dict,
+) -> str:
+    """Genera l'etichetta mostrata nel menu dei risultati."""
+
+    parti = [
+        risultato["ticker"],
+        risultato["nome"],
+    ]
+
+    if risultato.get(
+        "mercato"
+    ):
+        parti.append(
+            risultato["mercato"]
+        )
+
+    if risultato.get(
+        "paese"
+    ):
+        parti.append(
+            risultato["paese"]
+        )
+
+    return " — ".join(
+        parti
+    )
+
+
 def aggiorna_quotazioni_portafoglio(
     portafoglio_id: int,
 ) -> dict | None:
@@ -1096,79 +1152,291 @@ with scheda_gestione:
 
         with colonna_inserimento:
             st.subheader(
-                "Inserimento manuale"
+                "Inserisci un titolo"
             )
 
-            with st.form(
-                f"inserimento_manuale_{portafoglio_id}"
-            ):
-                ticker = st.text_input(
-                    "Ticker",
-                    max_chars=15,
-                    placeholder="Esempio: NVDA",
+            modalita_inserimento = st.radio(
+                "Modalità di inserimento",
+                options=[
+                    "Ricerca assistita",
+                    "Inserimento manuale",
+                ],
+                horizontal=True,
+                key=(
+                    "modalita_inserimento_"
+                    f"{portafoglio_id}"
+                ),
+            )
+
+            if modalita_inserimento == "Ricerca assistita":
+                st.caption(
+                    "Cerca un'azienda per nome oppure ticker. "
+                    "L'applicazione utilizza Twelve Data e propone "
+                    "i risultati più pertinenti."
                 )
 
-                quantita = st.number_input(
-                    "Quantità acquistata",
-                    min_value=0.000001,
-                    value=1.0,
-                    step=1.0,
-                    format="%.6f",
+                testo_ricerca = st.text_input(
+                    "Nome dell'azienda oppure ticker",
+                    placeholder="Esempio: Apple oppure AAPL",
+                    key=(
+                        "testo_ricerca_titolo_"
+                        f"{portafoglio_id}"
+                    ),
                 )
 
-                prezzo_medio_acquisto = st.number_input(
-                    "Prezzo medio di acquisto",
-                    min_value=0.0,
-                    value=0.0,
-                    step=0.01,
-                    format="%.2f",
-                )
-
-                data_acquisto = st.date_input(
-                    "Data di acquisto",
-                    value=date.today(),
-                    max_value=date.today(),
-                )
-
-                settore = st.text_input(
-                    "Settore",
-                    placeholder="Esempio: Technology",
-                )
-
-                mercato = st.text_input(
-                    "Mercato",
-                    placeholder="Esempio: NASDAQ",
-                )
-
-                conferma_inserimento = st.form_submit_button(
-                    "Inserisci titolo"
-                )
-
-                if conferma_inserimento:
-                    if not ticker.strip():
+                if st.button(
+                    "Cerca titolo",
+                    key=(
+                        "cerca_titolo_"
+                        f"{portafoglio_id}"
+                    ),
+                ):
+                    if len(
+                        testo_ricerca.strip()
+                    ) < 2:
                         st.warning(
-                            "Inserire il ticker."
-                        )
-                    elif not settore.strip():
-                        st.warning(
-                            "Inserire il settore."
-                        )
-                    elif not mercato.strip():
-                        st.warning(
-                            "Inserire il mercato."
+                            "Inserire almeno 2 caratteri."
                         )
                     else:
-                        inserisci_titolo_manualmente(
-                            portafoglio_id=portafoglio_id,
-                            ticker=ticker.strip(),
-                            quantita=quantita,
-                            prezzo_medio_acquisto=(
-                                prezzo_medio_acquisto
-                            ),
-                            data_acquisto=data_acquisto,
-                            settore=settore.strip(),
-                            mercato=mercato.strip(),
+                        with st.spinner(
+                            "Ricerca del titolo in corso..."
+                        ):
+                            risultato_ricerca = cerca_titoli(
+                                testo=testo_ricerca.strip(),
+                                limite=5,
+                            )
+
+                        if risultato_ricerca is not None:
+                            st.session_state[
+                                (
+                                    "risultati_ricerca_titoli_"
+                                    f"{portafoglio_id}"
+                                )
+                            ] = risultato_ricerca
+
+                ricerca_salvata = st.session_state.get(
+                    (
+                        "risultati_ricerca_titoli_"
+                        f"{portafoglio_id}"
+                    )
+                )
+
+                if ricerca_salvata:
+                    messaggio_ricerca = ricerca_salvata.get(
+                        "messaggio"
+                    )
+
+                    if messaggio_ricerca:
+                        st.info(
+                            messaggio_ricerca
                         )
+
+                    risultati_ricerca = ricerca_salvata.get(
+                        "risultati",
+                        [],
+                    )
+
+                    if risultati_ricerca:
+                        indice_risultato = st.selectbox(
+                            "Seleziona il titolo corretto",
+                            options=list(
+                                range(
+                                    len(
+                                        risultati_ricerca
+                                    )
+                                )
+                            ),
+                            format_func=lambda indice: (
+                                formatta_risultato_ricerca(
+                                    risultati_ricerca[
+                                        indice
+                                    ]
+                                )
+                            ),
+                            key=(
+                                "risultato_ricerca_selezionato_"
+                                f"{portafoglio_id}"
+                            ),
+                        )
+
+                        risultato_selezionato = (
+                            risultati_ricerca[
+                                indice_risultato
+                            ]
+                        )
+
+                        with st.form(
+                            (
+                                "inserimento_assistito_"
+                                f"{portafoglio_id}_"
+                                f"{indice_risultato}"
+                            )
+                        ):
+                            ticker_assistito = st.text_input(
+                                "Ticker",
+                                value=risultato_selezionato[
+                                    "ticker"
+                                ],
+                                disabled=True,
+                            )
+
+                            mercato_assistito = st.text_input(
+                                "Mercato",
+                                value=risultato_selezionato.get(
+                                    "mercato",
+                                    "",
+                                ),
+                                placeholder="Esempio: NASDAQ",
+                            )
+
+                            settore_assistito = st.text_input(
+                                "Settore",
+                                value=risultato_selezionato.get(
+                                    "settore",
+                                    "",
+                                ),
+                                placeholder="Esempio: Technology",
+                                help=(
+                                    "Il settore è compilato automaticamente "
+                                    "per i titoli del catalogo locale. "
+                                    "Per gli altri titoli può essere inserito "
+                                    "manualmente."
+                                ),
+                            )
+
+                            quantita_assistita = st.number_input(
+                                "Quantità acquistata",
+                                min_value=0.000001,
+                                value=1.0,
+                                step=1.0,
+                                format="%.6f",
+                            )
+
+                            prezzo_assistito = st.number_input(
+                                "Prezzo medio di acquisto",
+                                min_value=0.0,
+                                value=0.0,
+                                step=0.01,
+                                format="%.2f",
+                            )
+
+                            data_assistita = st.date_input(
+                                "Data di acquisto",
+                                value=date.today(),
+                                max_value=date.today(),
+                            )
+
+                            conferma_assistita = (
+                                st.form_submit_button(
+                                    "Inserisci titolo selezionato"
+                                )
+                            )
+
+                            if conferma_assistita:
+                                if not mercato_assistito.strip():
+                                    st.warning(
+                                        "Inserire il mercato."
+                                    )
+                                elif not settore_assistito.strip():
+                                    st.warning(
+                                        "Inserire il settore."
+                                    )
+                                else:
+                                    inserisci_titolo_manualmente(
+                                        portafoglio_id=portafoglio_id,
+                                        ticker=ticker_assistito.strip(),
+                                        quantita=quantita_assistita,
+                                        prezzo_medio_acquisto=(
+                                            prezzo_assistito
+                                        ),
+                                        data_acquisto=data_assistita,
+                                        settore=settore_assistito.strip(),
+                                        mercato=mercato_assistito.strip(),
+                                    )
+                    else:
+                        st.info(
+                            "Nessun titolo trovato. "
+                            "Provare un'altra ricerca oppure usare "
+                            "l'inserimento manuale."
+                        )
+
+            else:
+                st.caption(
+                    "Inserisci direttamente ticker, settore e mercato."
+                )
+
+                with st.form(
+                    f"inserimento_manuale_{portafoglio_id}"
+                ):
+                    ticker = st.text_input(
+                        "Ticker",
+                        max_chars=15,
+                        placeholder="Esempio: NVDA",
+                    )
+
+                    quantita = st.number_input(
+                        "Quantità acquistata",
+                        min_value=0.000001,
+                        value=1.0,
+                        step=1.0,
+                        format="%.6f",
+                    )
+
+                    prezzo_medio_acquisto = st.number_input(
+                        "Prezzo medio di acquisto",
+                        min_value=0.0,
+                        value=0.0,
+                        step=0.01,
+                        format="%.2f",
+                    )
+
+                    data_acquisto = st.date_input(
+                        "Data di acquisto",
+                        value=date.today(),
+                        max_value=date.today(),
+                    )
+
+                    settore = st.text_input(
+                        "Settore",
+                        placeholder="Esempio: Technology",
+                    )
+
+                    mercato = st.text_input(
+                        "Mercato",
+                        placeholder="Esempio: NASDAQ",
+                    )
+
+                    conferma_inserimento = (
+                        st.form_submit_button(
+                            "Inserisci titolo"
+                        )
+                    )
+
+                    if conferma_inserimento:
+                        if not ticker.strip():
+                            st.warning(
+                                "Inserire il ticker."
+                            )
+                        elif not settore.strip():
+                            st.warning(
+                                "Inserire il settore."
+                            )
+                        elif not mercato.strip():
+                            st.warning(
+                                "Inserire il mercato."
+                            )
+                        else:
+                            inserisci_titolo_manualmente(
+                                portafoglio_id=portafoglio_id,
+                                ticker=ticker.strip(),
+                                quantita=quantita,
+                                prezzo_medio_acquisto=(
+                                    prezzo_medio_acquisto
+                                ),
+                                data_acquisto=data_acquisto,
+                                settore=settore.strip(),
+                                mercato=mercato.strip(),
+                            )
 
         with colonna_importazione:
             st.subheader(

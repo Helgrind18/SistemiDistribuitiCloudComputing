@@ -6,6 +6,7 @@ from fastapi import (
     File,
     HTTPException,
     Response,
+    Query,
     UploadFile,
     status,
 )
@@ -46,7 +47,7 @@ from app.servizio_quotazioni import (
     ErrorePortafoglioNonTrovato as ErrorePortafoglioQuotazioniNonTrovato,
     ErroreServizioQuotazioni,
     aggiorna_quotazioni_portafoglio,
-    calcola_riepilogo_portafoglio,
+    calcola_riepilogo_portafoglio, cerca_titoli_per_nome_o_ticker,
 )
 from app.servizio_suggerimenti_ai import genera_suggerimenti_titoli_simili
 
@@ -117,6 +118,40 @@ def verifica_salute() -> dict[str, str]:
     return {
         "stato": "ok",
     }
+
+@applicazione.get(
+    "/ricerca-titoli",
+)
+def ricerca_titoli(
+    testo: Annotated[
+        str,
+        Query(
+            min_length=2,
+            max_length=50,
+        ),
+    ],
+    limite: Annotated[
+        int,
+        Query(
+            ge=1,
+            le=10,
+        ),
+    ] = 10,
+) -> dict[str, object]:
+    """Cerca titoli per nome oppure ticker tramite Twelve Data."""
+
+    try:
+        return cerca_titoli_per_nome_o_ticker(
+            testo=testo,
+            limite=limite,
+        )
+    except ValueError as errore:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(
+                errore
+            ),
+        ) from errore
 
 
 @applicazione.post(

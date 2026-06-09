@@ -9,12 +9,12 @@ from dotenv import load_dotenv
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.catalogo_titoli import CATALOGO_TITOLI
 from app.modelli import (
     Portafoglio,
     QuotazioneCorrente,
     TitoloPosseduto,
 )
-
 
 load_dotenv()
 
@@ -53,8 +53,328 @@ def ottieni_chiave_api() -> str:
     return chiave_api
 
 
+def cerca_titoli_nel_catalogo_locale(
+        testo: str,
+        limite: int = 10,
+) -> list[dict[str, str]]:
+    """Cerca titoli nel catalogo locale usato come fallback."""
+
+    testo_normalizzato = testo.strip().lower()
+
+    if not testo_normalizzato:
+        return []
+
+    risultati = []
+
+    for titolo in CATALOGO_TITOLI:
+        ticker = titolo["ticker"]
+        nome = titolo["nome"]
+
+        if (
+                testo_normalizzato in ticker.lower()
+                or testo_normalizzato in nome.lower()
+        ):
+            risultati.append(
+                {
+                    "ticker": ticker,
+                    "nome": nome,
+                    "mercato": titolo["mercato"],
+                    "paese": "United States",
+                    "tipo_strumento": "Azione",
+                    "settore": titolo["settore"],
+                }
+            )
+
+    return risultati[:limite]
+
+
+def crea_risposta_ricerca_locale(
+        testo: str,
+        limite: int,
+        messaggio: str,
+) -> dict[str, object]:
+    """Restituisce i risultati locali quando Twelve Data non è disponibile."""
+
+    return {
+        "origine": "catalogo_locale",
+        "messaggio": messaggio,
+        "risultati": cerca_titoli_nel_catalogo_locale(
+            testo=testo,
+            limite=limite,
+        ),
+    }
+
+
+def calcola_priorita_risultato_ricerca(
+        risultato: dict[str, str],
+        testo: str,
+        ticker_catalogo: set[str],
+) -> tuple:
+    """Definisce l'ordine dei risultati mostrati all'utente."""
+
+    testo_normalizzato = testo.strip().lower()
+
+    ticker = risultato["ticker"].strip().upper()
+    nome = risultato["nome"].strip().lower()
+    paese = risultato["paese"].strip().lower()
+    mercato = risultato["mercato"].strip().upper()
+    tipo_strumento = risultato["tipo_strumento"].strip().lower()
+
+    return (
+        0 if ticker.lower() == testo_normalizzato else 1,
+        0 if ticker in ticker_catalogo else 1,
+        0 if nome == testo_normalizzato else 1,
+        0 if nome.startswith(testo_normalizzato) else 1,
+        0 if tipo_strumento in {"common stock", "azione"} else 1,
+        0 if paese == "united states" else 1,
+        0 if mercato in {"NASDAQ", "NYSE"} else 1,
+        ticker,
+    )
+
+
+def unisci_e_ordina_risultati_ricerca(
+    risultati_online: list[dict[str, str]],
+    risultati_locali: list[dict[str, str]],
+    testo: str,
+    limite: int,
+) -> list[dict[str, str]]:
+    """Unisce i risultati online e locali evitando duplicati."""
+
+    risultati_per_ticker = {}
+
+    for risultato_online in risultati_online:
+        ticker = risultato_online["ticker"]
+
+        if ticker not in risultati_per_ticker:
+            risultati_per_ticker[ticker] = risultato_online
+
+    for risultato_locale in risultati_locali:
+        ticker = risultato_locale["ticker"]
+
+        if ticker not in risultati_per_ticker:
+            risultati_per_ticker[ticker] = risultato_locale
+            continue
+
+        risultato = risultati_per_ticker[
+            ticker
+        ]
+
+        risultato["nome"] = risultato_locale[
+            "nome"
+        ]
+
+        risultato["mercato"] = risultato_locale[
+            "mercato"
+        ]
+
+        risultato["paese"] = risultato_locale[
+            "paese"
+        ]
+
+        risultato["tipo_strumento"] = risultato_locale[
+            "tipo_strumento"
+        ]
+
+        risultato["settore"] = risultato_locale[
+            "settore"
+        ]
+
+    ticker_catalogo = {
+        risultato["ticker"]
+        for risultato in risultati_locali
+    }
+
+    return sorted(
+        risultati_per_ticker.values(),
+        key=lambda risultato: (
+            calcola_priorita_risultato_ricerca(
+                risultato=risultato,
+                testo=testo,
+                ticker_catalogo=ticker_catalogo,
+            )
+        ),
+    )[:limite]
+
+def cerca_titoli_per_nome_o_ticker(
+    testo: str,
+    limite: int = 10,
+) -> dict[str, object]:
+    """Cerca titoli tramite Twelve Data e integra il catalogo locale."""
+
+    testo = testo.strip()
+
+    if len(testo) < 2:
+        raise ValueError(
+            "Inserire almeno 2 caratteri per cercare un titolo."
+        )
+
+    if limite < 1 or limite > 10:
+        raise ValueError(
+            "Il numero massimo di risultati deve essere compreso tra 1 e 10."
+        )
+
+    risultati_locali = cerca_titoli_nel_catalogo_locale(
+        testo=testo,
+        limite=limite,
+    )
+
+    try:
+        risposta = requests.get(
+            f"{URL_API_TWELVE_DATA}/symbol_search",
+            params={
+                "symbol": testo,
+                "outputsize": 30,
+                "apikey": ottieni_chiave_api(),
+            },
+            timeout=TIMEOUT_SECONDI,
+        )
+    except (
+        requests.RequestException,
+        ErroreConfigurazioneQuotazioni,
+    ):
+        return crea_risposta_ricerca_locale(
+            testo=testo,
+            limite=limite,
+            messaggio=(
+                "Twelve Data non è temporaneamente disponibile. "
+                "Sono mostrati i risultati del catalogo locale."
+            ),
+        )
+
+    try:
+        contenuto = risposta.json()
+    except ValueError:
+        return crea_risposta_ricerca_locale(
+            testo=testo,
+            limite=limite,
+            messaggio=(
+                "Twelve Data ha restituito una risposta non valida. "
+                "Sono mostrati i risultati del catalogo locale."
+            ),
+        )
+
+    if (
+        not risposta.ok
+        or not isinstance(
+            contenuto,
+            dict,
+        )
+        or contenuto.get(
+            "status"
+        ) == "error"
+    ):
+        return crea_risposta_ricerca_locale(
+            testo=testo,
+            limite=limite,
+            messaggio=(
+                "La ricerca online non è temporaneamente disponibile. "
+                "Sono mostrati i risultati del catalogo locale."
+            ),
+        )
+
+    dati = contenuto.get(
+        "data",
+        [],
+    )
+
+    if not isinstance(
+        dati,
+        list,
+    ):
+        return crea_risposta_ricerca_locale(
+            testo=testo,
+            limite=limite,
+            messaggio=(
+                "Twelve Data ha restituito una risposta non valida. "
+                "Sono mostrati i risultati del catalogo locale."
+            ),
+        )
+
+    settori_per_ticker = {
+        titolo["ticker"].upper(): titolo["settore"]
+        for titolo in CATALOGO_TITOLI
+    }
+
+    risultati_online = []
+
+    for elemento in dati:
+        if not isinstance(
+            elemento,
+            dict,
+        ):
+            continue
+
+        ticker = str(
+            elemento.get(
+                "symbol",
+                "",
+            )
+        ).strip().upper()
+
+        if not ticker:
+            continue
+
+        nome = str(
+            elemento.get(
+                "instrument_name",
+                ticker,
+            )
+        ).strip()
+
+        mercato = str(
+            elemento.get(
+                "exchange",
+                elemento.get(
+                    "mic_code",
+                    "",
+                ),
+            )
+        ).strip()
+
+        paese = str(
+            elemento.get(
+                "country",
+                "",
+            )
+        ).strip()
+
+        tipo_strumento = str(
+            elemento.get(
+                "instrument_type",
+                "",
+            )
+        ).strip()
+
+        risultati_online.append(
+            {
+                "ticker": ticker,
+                "nome": nome or ticker,
+                "mercato": mercato,
+                "paese": paese,
+                "tipo_strumento": tipo_strumento,
+                "settore": settori_per_ticker.get(
+                    ticker,
+                    "",
+                ),
+            }
+        )
+
+    risultati = unisci_e_ordina_risultati_ricerca(
+        risultati_online=risultati_online,
+        risultati_locali=risultati_locali,
+        testo=testo,
+        limite=limite,
+    )
+
+    return {
+        "origine": "twelve_data",
+        "messaggio": None,
+        "risultati": risultati,
+    }
+
+
 def ottieni_prezzo_corrente(
-    ticker: str,
+        ticker: str,
 ) -> Decimal:
     """Recupera il prezzo corrente di un ticker da Twelve Data."""
 
@@ -87,8 +407,8 @@ def ottieni_prezzo_corrente(
         ) from errore
 
     if not isinstance(
-        contenuto,
-        dict,
+            contenuto,
+            dict,
     ):
         raise ErroreServizioQuotazioni(
             "Twelve Data ha restituito una risposta non valida."
@@ -122,8 +442,8 @@ def ottieni_prezzo_corrente(
 
 
 def aggiorna_quotazione_corrente(
-    sessione: Session,
-    ticker: str,
+        sessione: Session,
+        ticker: str,
 ) -> QuotazioneCorrente:
     """Recupera e salva il prezzo corrente di un ticker."""
 
@@ -158,8 +478,8 @@ def aggiorna_quotazione_corrente(
 
 
 def aggiorna_quotazioni_portafoglio(
-    sessione: Session,
-    portafoglio_id: int,
+        sessione: Session,
+        portafoglio_id: int,
 ) -> dict:
     """
     Aggiorna le quotazioni di tutti i titoli presenti nel portafoglio.
@@ -214,8 +534,8 @@ def aggiorna_quotazioni_portafoglio(
 
 
 def calcola_riepilogo_portafoglio(
-    sessione: Session,
-    portafoglio_id: int,
+        sessione: Session,
+        portafoglio_id: int,
 ) -> dict:
     """Calcola il riepilogo finanziario di un portafoglio."""
 
@@ -265,27 +585,27 @@ def calcola_riepilogo_portafoglio(
             )
 
         capitale_investito = (
-            titolo.quantita
-            * titolo.prezzo_medio_acquisto
+                titolo.quantita
+                * titolo.prezzo_medio_acquisto
         )
 
         valore_corrente = (
-            titolo.quantita
-            * quotazione.prezzo_corrente
+                titolo.quantita
+                * quotazione.prezzo_corrente
         )
 
         guadagno_perdita = (
-            valore_corrente
-            - capitale_investito
+                valore_corrente
+                - capitale_investito
         )
 
         if capitale_investito == 0:
             variazione_percentuale = None
         else:
             variazione_percentuale = (
-                guadagno_perdita
-                / capitale_investito
-                * Decimal("100")
+                    guadagno_perdita
+                    / capitale_investito
+                    * Decimal("100")
             )
 
         capitale_investito_totale += (
@@ -331,17 +651,17 @@ def calcola_riepilogo_portafoglio(
         )
 
     guadagno_perdita_totale = (
-        valore_corrente_totale
-        - capitale_investito_totale
+            valore_corrente_totale
+            - capitale_investito_totale
     )
 
     if capitale_investito_totale == 0:
         variazione_percentuale_totale = None
     else:
         variazione_percentuale_totale = (
-            guadagno_perdita_totale
-            / capitale_investito_totale
-            * Decimal("100")
+                guadagno_perdita_totale
+                / capitale_investito_totale
+                * Decimal("100")
         )
 
     return {
