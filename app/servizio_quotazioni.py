@@ -133,10 +133,10 @@ def calcola_priorita_risultato_ricerca(
 
 
 def unisci_e_ordina_risultati_ricerca(
-    risultati_online: list[dict[str, str]],
-    risultati_locali: list[dict[str, str]],
-    testo: str,
-    limite: int,
+        risultati_online: list[dict[str, str]],
+        risultati_locali: list[dict[str, str]],
+        testo: str,
+        limite: int,
 ) -> list[dict[str, str]]:
     """Unisce i risultati online e locali evitando duplicati."""
 
@@ -195,9 +195,10 @@ def unisci_e_ordina_risultati_ricerca(
         ),
     )[:limite]
 
+
 def cerca_titoli_per_nome_o_ticker(
-    testo: str,
-    limite: int = 10,
+        testo: str,
+        limite: int = 10,
 ) -> dict[str, object]:
     """Cerca titoli tramite Twelve Data e integra il catalogo locale."""
 
@@ -229,8 +230,8 @@ def cerca_titoli_per_nome_o_ticker(
             timeout=TIMEOUT_SECONDI,
         )
     except (
-        requests.RequestException,
-        ErroreConfigurazioneQuotazioni,
+            requests.RequestException,
+            ErroreConfigurazioneQuotazioni,
     ):
         return crea_risposta_ricerca_locale(
             testo=testo,
@@ -254,14 +255,14 @@ def cerca_titoli_per_nome_o_ticker(
         )
 
     if (
-        not risposta.ok
-        or not isinstance(
-            contenuto,
-            dict,
-        )
-        or contenuto.get(
-            "status"
-        ) == "error"
+            not risposta.ok
+            or not isinstance(
+        contenuto,
+        dict,
+    )
+            or contenuto.get(
+        "status"
+    ) == "error"
     ):
         return crea_risposta_ricerca_locale(
             testo=testo,
@@ -278,8 +279,8 @@ def cerca_titoli_per_nome_o_ticker(
     )
 
     if not isinstance(
-        dati,
-        list,
+            dati,
+            list,
     ):
         return crea_risposta_ricerca_locale(
             testo=testo,
@@ -299,8 +300,8 @@ def cerca_titoli_per_nome_o_ticker(
 
     for elemento in dati:
         if not isinstance(
-            elemento,
-            dict,
+                elemento,
+                dict,
         ):
             continue
 
@@ -440,6 +441,129 @@ def ottieni_prezzo_corrente(
             "Il prezzo restituito da Twelve Data non è numerico."
         ) from errore
 
+def ottieni_andamento_storico_titolo(
+    ticker: str,
+    giorni: int = 30,
+) -> dict[str, object]:
+    """Recupera i prezzi di chiusura giornalieri di un titolo."""
+
+    ticker = ticker.strip().upper()
+
+    if not ticker:
+        raise ValueError("Il ticker non può essere vuoto.")
+
+    if giorni < 5 or giorni > 365:
+        raise ValueError(
+            "Il numero di giorni deve essere compreso tra 5 e 365."
+        )
+
+    try:
+        risposta = requests.get(
+            f"{URL_API_TWELVE_DATA}/time_series",
+            params={
+                "symbol": ticker,
+                "interval": "1day",
+                "outputsize": giorni,
+                "apikey": ottieni_chiave_api(),
+            },
+            timeout=TIMEOUT_SECONDI,
+        )
+    except requests.RequestException as errore:
+        raise ErroreServizioQuotazioni(
+            "Impossibile contattare Twelve Data."
+        ) from errore
+
+    try:
+        contenuto = risposta.json()
+    except ValueError as errore:
+        raise ErroreServizioQuotazioni(
+            "Twelve Data ha restituito una risposta non valida."
+        ) from errore
+
+    if not isinstance(contenuto, dict):
+        raise ErroreServizioQuotazioni(
+            "Twelve Data ha restituito una risposta non valida."
+        )
+
+    if not risposta.ok or contenuto.get("status") == "error":
+        messaggio = contenuto.get(
+            "message",
+            "Errore non specificato.",
+        )
+
+        raise ErroreServizioQuotazioni(
+            f"Twelve Data ha restituito un errore: {messaggio}"
+        )
+
+    valori = contenuto.get("values", [])
+
+    if not isinstance(valori, list) or not valori:
+        raise ErroreServizioQuotazioni(
+            f"Lo storico del ticker '{ticker}' non è disponibile."
+        )
+
+    punti = []
+
+    for valore in reversed(valori):
+        if not isinstance(valore, dict):
+            continue
+
+        data = str(
+            valore.get("datetime", "")
+        ).strip()
+
+        prezzo_chiusura = valore.get("close")
+        volume = valore.get("volume")
+
+        if not data or prezzo_chiusura is None:
+            continue
+
+        try:
+            prezzo_chiusura_numerico = Decimal(
+                str(prezzo_chiusura)
+            )
+        except InvalidOperation as errore:
+            raise ErroreServizioQuotazioni(
+                "Twelve Data ha restituito un prezzo storico non valido."
+            ) from errore
+        try:
+            volume_numerico = (
+                int(
+                    Decimal(
+                        str(
+                            volume
+                        )
+                    )
+                )
+                if volume is not None
+                else None
+            )
+        except InvalidOperation as errore:
+            raise ErroreServizioQuotazioni(
+                "Twelve Data ha restituito un volume storico non valido."
+            ) from errore
+
+        punti.append(
+            {
+                "data": data,
+                "prezzo_chiusura": float(
+                    prezzo_chiusura_numerico
+                ),
+                "volume": volume_numerico,
+            }
+        )
+
+    if not punti:
+        raise ErroreServizioQuotazioni(
+            f"Lo storico del ticker '{ticker}' non è disponibile."
+        )
+
+    return {
+        "ticker": ticker,
+        "intervallo": "1day",
+        "giorni_richiesti": giorni,
+        "punti": punti,
+    }
 
 def aggiorna_quotazione_corrente(
         sessione: Session,

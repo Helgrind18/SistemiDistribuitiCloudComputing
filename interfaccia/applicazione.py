@@ -178,6 +178,45 @@ def formatta_risultato_ricerca(
     )
 
 
+def ottieni_andamento_titolo(
+    ticker: str,
+    giorni: int,
+) -> dict | None:
+    """Richiede al backend l'andamento storico di un titolo."""
+
+    risposta = invia_richiesta(
+        metodo="GET",
+        percorso=f"/titoli/{ticker}/andamento",
+        params={
+            "giorni": giorni,
+        },
+    )
+
+    if risposta is None:
+        return None
+
+    if not risposta.ok:
+        mostra_errore_api(
+            risposta
+        )
+        return None
+
+    return risposta.json()
+
+
+def ottieni_chiave_andamento_storico(
+    portafoglio_id: int,
+    ticker: str,
+    giorni: int,
+) -> str:
+    """Restituisce la chiave usata per salvare lo storico nella sessione."""
+
+    return (
+        f"andamento_storico_portafoglio_{portafoglio_id}"
+        f"_ticker_{ticker}_giorni_{giorni}"
+    )
+
+
 def aggiorna_quotazioni_portafoglio(
     portafoglio_id: int,
 ) -> dict | None:
@@ -857,6 +896,171 @@ with scheda_dashboard:
             else:
                 st.info(
                     "Il portafoglio non contiene ancora titoli."
+                )
+
+            st.divider()
+            st.subheader(
+                "Andamento storico dei titoli"
+            )
+
+            st.caption(
+                "Seleziona un titolo e un periodo per visualizzare "
+                "l'andamento dei prezzi di chiusura giornalieri. "
+                "I dati vengono richiesti a Twelve Data soltanto "
+                "quando premi il pulsante."
+            )
+
+            titoli_per_grafico = riepilogo[
+                "titoli"
+            ]
+
+            if titoli_per_grafico:
+                (
+                    colonna_titolo_grafico,
+                    colonna_periodo_grafico,
+                ) = st.columns(
+                    2
+                )
+
+                with colonna_titolo_grafico:
+                    ticker_grafico = st.selectbox(
+                        "Titolo da visualizzare",
+                        options=[
+                            titolo["ticker"]
+                            for titolo in titoli_per_grafico
+                        ],
+                        key=(
+                            "ticker_grafico_"
+                            f"{portafoglio_dashboard_id}"
+                        ),
+                    )
+
+                opzioni_periodo = {
+                    "Ultimi 30 giorni": 30,
+                    "Ultimi 90 giorni": 90,
+                    "Ultimi 180 giorni": 180,
+                }
+
+                with colonna_periodo_grafico:
+                    periodo_grafico = st.selectbox(
+                        "Periodo",
+                        options=list(
+                            opzioni_periodo
+                        ),
+                        key=(
+                            "periodo_grafico_"
+                            f"{portafoglio_dashboard_id}"
+                        ),
+                    )
+
+                giorni_grafico = opzioni_periodo[
+                    periodo_grafico
+                ]
+
+                chiave_andamento = (
+                    ottieni_chiave_andamento_storico(
+                        portafoglio_id=portafoglio_dashboard_id,
+                        ticker=ticker_grafico,
+                        giorni=giorni_grafico,
+                    )
+                )
+
+                if st.button(
+                    "Mostra andamento",
+                    key=(
+                        "mostra_andamento_"
+                        f"{portafoglio_dashboard_id}_"
+                        f"{ticker_grafico}_"
+                        f"{giorni_grafico}"
+                    ),
+                ):
+                    with st.spinner(
+                        "Recupero dello storico in corso..."
+                    ):
+                        andamento = ottieni_andamento_titolo(
+                            ticker=ticker_grafico,
+                            giorni=giorni_grafico,
+                        )
+
+                    if andamento is not None:
+                        st.session_state[
+                            chiave_andamento
+                        ] = andamento
+
+                andamento_salvato = st.session_state.get(
+                    chiave_andamento
+                )
+
+                if andamento_salvato:
+                    punti_grafico = [
+                        {
+                            "data": punto["data"],
+                            "prezzo_chiusura": round(
+                                float(
+                                    punto["prezzo_chiusura"]
+                                ),
+                                2,
+                            ),
+                        }
+                        for punto in andamento_salvato[
+                            "punti"
+                        ]
+                    ]
+
+                    st.line_chart(
+                        data=punti_grafico,
+                        x="data",
+                        y="prezzo_chiusura",
+                        x_label="Data",
+                        y_label="Prezzo di chiusura",
+                        width="stretch",
+                        height=420,
+                    )
+
+                    punti_volume = [
+                        {
+                            "data": punto["data"],
+                            "volume": int(
+                                punto["volume"]
+                            ),
+                        }
+                        for punto in andamento_salvato[
+                            "punti"
+                        ]
+                        if punto.get(
+                            "volume"
+                        ) is not None
+                    ]
+
+                    if punti_volume:
+                        st.subheader(
+                            "Volumi di scambio giornalieri"
+                        )
+
+                        st.bar_chart(
+                            data=punti_volume,
+                            x="data",
+                            y="volume",
+                            x_label="Data",
+                            y_label="Volume",
+                            width="stretch",
+                            height=280,
+                        )
+                    else:
+                        st.info(
+                            "I volumi di scambio non sono disponibili "
+                            "per il titolo selezionato."
+                        )
+
+                    st.caption(
+                        f"Ticker: {andamento_salvato['ticker']} — "
+                        f"Punti visualizzati: {len(punti_grafico)} — "
+                        "Intervallo: giornaliero."
+                    )
+            else:
+                st.info(
+                    "Aggiungere almeno un titolo prima di visualizzare "
+                    "un grafico."
                 )
 
             st.divider()

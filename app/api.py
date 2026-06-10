@@ -47,7 +47,7 @@ from app.servizio_quotazioni import (
     ErrorePortafoglioNonTrovato as ErrorePortafoglioQuotazioniNonTrovato,
     ErroreServizioQuotazioni,
     aggiorna_quotazioni_portafoglio,
-    calcola_riepilogo_portafoglio, cerca_titoli_per_nome_o_ticker,
+    calcola_riepilogo_portafoglio, cerca_titoli_per_nome_o_ticker, ottieni_andamento_storico_titolo,
 )
 from app.servizio_suggerimenti_ai import genera_suggerimenti_titoli_simili
 
@@ -153,7 +153,47 @@ def ricerca_titoli(
             ),
         ) from errore
 
+@applicazione.get(
+    "/titoli/{ticker}/andamento",
+)
+def ottieni_andamento_titolo(
+    ticker: str,
+    giorni: Annotated[
+        int,
+        Query(
+            ge=5,
+            le=365,
+        ),
+    ] = 30,
+) -> dict[str, object]:
+    """Restituisce l'andamento storico giornaliero di un titolo."""
 
+    try:
+        return ottieni_andamento_storico_titolo(
+            ticker=ticker,
+            giorni=giorni,
+        )
+    except ValueError as errore:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(
+                errore
+            ),
+        ) from errore
+    except ErroreConfigurazioneQuotazioni as errore:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(
+                errore
+            ),
+        ) from errore
+    except ErroreServizioQuotazioni as errore:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(
+                errore
+            ),
+        ) from errore
 @applicazione.post(
     "/portafogli",
     status_code=status.HTTP_201_CREATED,
